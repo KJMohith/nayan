@@ -1,105 +1,132 @@
-"""
-encode_faces.py
----------------
-Scans the `data/` folder, generates DeepFace embeddings for every
-photo found, and saves them to `encodings.pkl`.
-
-Folder structure expected:
-    data/
-        Alice/
-            photo1.jpg
-            photo2.jpg
-        Bob/
-            img1.jpg
-        ...
-
-Run once (or whenever you add / change photos):
-    python encode_faces.py
-"""
-
 import os
 import pickle
 import numpy as np
 from deepface import DeepFace
 
-DATA_DIR       = "data"
+# ---------------- CONFIG ----------------
+
+DATA_DIR = "data"
 ENCODINGS_FILE = "encodings.pkl"
-MODEL_NAME     = "VGG-Face"          # Options: VGG-Face, Facenet, Facenet512, ArcFace
-DETECTOR       = "opencv"            # Options: opencv, retinaface, mtcnn, ssd
-SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+MODEL_NAME = "Facenet512"
+DETECTOR = "retinaface"
+
+SUPPORTED_EXT = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+
+# ----------------------------------------
 
 
-def encode_image(image_path: str):
-    """Return embedding vector for the first face found in image, or None."""
+def encode_image(img_path):
+
     try:
-        result = DeepFace.represent(
-            img_path   = image_path,
-            model_name = MODEL_NAME,
-            detector_backend = DETECTOR,
-            enforce_detection = True,
+
+        reps = DeepFace.represent(
+            img_path=img_path,
+            model_name=MODEL_NAME,
+            detector_backend=DETECTOR,
+            enforce_detection=True
         )
-        # result is a list; take the first face's embedding
-        return np.array(result[0]["embedding"])
+
+        embeddings = []
+
+        for r in reps:
+
+            embeddings.append(np.array(r["embedding"]))
+
+        return embeddings
+
     except Exception as e:
-        print(f"    [WARN] Could not encode {os.path.basename(image_path)}: {e}")
-        return None
+
+        print("Skipped:", img_path, "|", e)
+
+        return []
 
 
 def build_encodings():
-    if not os.path.isdir(DATA_DIR):
-        print(f"[ERROR] '{DATA_DIR}/' folder not found.")
-        print("        Create it and add sub-folders named after each friend.")
+
+    if not os.path.exists(DATA_DIR):
+
+        print("ERROR: data folder not found")
+
         return
 
-    persons = sorted([
-        p for p in os.listdir(DATA_DIR)
-        if os.path.isdir(os.path.join(DATA_DIR, p))
-    ])
-
-    if not persons:
-        print(f"[ERROR] '{DATA_DIR}/' is empty. Add friend folders with photos.")
-        return
 
     known_embeddings = []
-    known_names      = []
+    known_names = []
 
-    for person_name in persons:
-        person_dir = os.path.join(DATA_DIR, person_name)
-        print(f"\n[INFO] Processing: {person_name}")
+
+    persons = sorted(os.listdir(DATA_DIR))
+
+
+    print("Scanning dataset...")
+
+
+    for person in persons:
+
+        person_dir = os.path.join(DATA_DIR, person)
+
+        if not os.path.isdir(person_dir):
+            continue
+
+
+        print("\nEncoding:", person)
+
+
         count = 0
 
-        for filename in sorted(os.listdir(person_dir)):
-            ext = os.path.splitext(filename)[1].lower()
-            if ext not in SUPPORTED_EXTS:
+
+        for file in os.listdir(person_dir):
+
+            if not file.lower().endswith(SUPPORTED_EXT):
                 continue
 
-            image_path = os.path.join(person_dir, filename)
-            embedding  = encode_image(image_path)
 
-            if embedding is not None:
-                known_embeddings.append(embedding)
-                known_names.append(person_name)
+            path = os.path.join(person_dir, file)
+
+            embeddings = encode_image(path)
+
+
+            for emb in embeddings:
+
+                known_embeddings.append(emb)
+
+                known_names.append(person)
+
                 count += 1
-                print(f"    [OK] {filename}")
 
-        print(f"    → {count} face(s) encoded for {person_name}")
+                print("OK:", file)
 
-    if not known_embeddings:
-        print("\n[ERROR] No faces encoded. Check that photos contain clear, visible faces.")
+
+        print("Faces encoded:", count)
+
+
+    if len(known_embeddings) == 0:
+
+        print("ERROR: No faces found in dataset")
+
         return
+
 
     data = {
         "embeddings": known_embeddings,
-        "names":      known_names,
-        "model":      MODEL_NAME,
+        "names": known_names,
+        "model": MODEL_NAME
     }
+
+
     with open(ENCODINGS_FILE, "wb") as f:
+
         pickle.dump(data, f)
 
-    print(f"\n[SUCCESS] {len(known_embeddings)} embedding(s) saved for "
-          f"{len(set(known_names))} person(s) → '{ENCODINGS_FILE}'")
+
+    print("\nSUCCESS")
+    print("Saved", len(known_embeddings), "embeddings")
+    print("People:", set(known_names))
+    print("Output file:", ENCODINGS_FILE)
 
 
 if __name__ == "__main__":
-    print("=== DeepFace — Encoding Faces ===")
+
+    print("Building face encodings using", MODEL_NAME)
+
     build_encodings()
